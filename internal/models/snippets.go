@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -50,6 +51,10 @@ func (m *SnippetModel) Get(ctx context.Context, id int) (Snippet, error) {
 	var s Snippet
 	err := m.DB.QueryRow(ctx, stmt, id).Scan(&s.ID, &s.Title, &s.Content, &s.Created, &s.Updated, &s.Expires)
 
+	fmt.Println("snippet loaded",
+		"id", s.ID,
+		"title", s.Title,
+	)
 	if err != nil {
 
 		if errors.Is(err, sql.ErrNoRows) {
@@ -69,6 +74,8 @@ func (m *SnippetModel) Latest(ctx context.Context) ([]Snippet, error) {
 	`
 
 	rows, err := m.DB.Query(ctx, stmt)
+
+	//fmt.Println(rows)
 	//defer rows.Close()
 
 	if err != nil {

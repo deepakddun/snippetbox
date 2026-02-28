@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
+	"time"
 )
 
 func (app *application) serverError(w http.ResponseWriter, r *http.Request, err error) {
@@ -22,6 +24,7 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, page stri
 
 	cache := app.templateCache
 	fmt.Println(cache)
+	buf := new(bytes.Buffer)
 	ts, ok := cache[page]
 	if !ok {
 		err := fmt.Errorf("the template %s does not exists", page)
@@ -30,10 +33,15 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, page stri
 
 	}
 	w.WriteHeader(statusCode)
-	err := ts.ExecuteTemplate(w, "base", data)
+	err := ts.ExecuteTemplate(buf, "base", data)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	buf.WriteTo(w)
 
+}
+
+func (app *application) getCurrentYear() int {
+	return time.Now().Year()
 }
