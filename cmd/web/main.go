@@ -7,15 +7,22 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/alexedwards/scs/pgxstore"
+	"github.com/alexedwards/scs/v2"
 	"github.com/deepakddun/snippetbox/internal/models"
+	"github.com/go-playground/form/v4"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type application struct {
-	logger        *slog.Logger
-	snippets      *models.SnippetModel
-	templateCache map[string]*template.Template
+	logger         *slog.Logger
+	snippets       *models.SnippetModel
+	templateCache  map[string]*template.Template
+	formDecoder    *form.Decoder
+	sessionManager *scs.SessionManager
+	users          *models.UserModel
 }
 
 func main() {
@@ -40,11 +47,20 @@ func main() {
 
 		os.Exit(1)
 	}
+	// Initialize a decoder instance...
+	formDecoder := form.NewDecoder()
+
+	sessionManager := scs.New()
+	sessionManager.Store = pgxstore.New(db)
+	sessionManager.Lifetime = 12 * time.Hour
 
 	app := &application{
-		logger:        logger,
-		snippets:      &models.SnippetModel{DB: db},
-		templateCache: templateCache,
+		logger:         logger,
+		snippets:       &models.SnippetModel{DB: db},
+		templateCache:  templateCache,
+		formDecoder:    formDecoder,
+		sessionManager: sessionManager,
+		users:          &models.UserModel{DB: db},
 	}
 
 	addr := flag.String("addr", ":4000", " HTTP server network address")
@@ -54,8 +70,16 @@ func main() {
 	// Note that the path given to the http.Dir function is relative to the project
 	// directory root.
 
-	logger.Info(" Starting the server at", "addr", *addr)
-	err = http.ListenAndServe(*addr, app.routes())
+	srv := &http.Server{
+		Addr:         *addr,
+		Handler:      app.routes(),
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
+
+	logger.Info(" Starting the server at", "addr", srv.Addr)
+	err = srv.ListenAndServeTLS("../../tls/cert.pem", "../../tls/key.pem")
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(1)
