@@ -24,6 +24,7 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, page stri
 
 	cache := app.templateCache
 	fmt.Println(cache)
+	fmt.Println(cache)
 	buf := new(bytes.Buffer)
 	ts, ok := cache[page]
 	if !ok {
@@ -32,16 +33,33 @@ func (app *application) render(w http.ResponseWriter, r *http.Request, page stri
 		return
 
 	}
-	w.WriteHeader(statusCode)
+
+	fmt.Println("render page:", page)
+	fmt.Println(ts.DefinedTemplates())
 	err := ts.ExecuteTemplate(buf, "base", data)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	w.WriteHeader(statusCode)
 	buf.WriteTo(w)
 
 }
 
 func (app *application) getCurrentYear() int {
 	return time.Now().Year()
+}
+
+func (app *application) isAutheticated(r *http.Request) bool {
+
+	return app.sessionManager.Exists(r.Context(), "authenticatedUserID")
+}
+
+func (app *application) newTemplateData(r *http.Request) templateData {
+	return templateData{
+
+		Flash:           app.sessionManager.PopString(r.Context(), "flash"),
+		CurrentYear:     app.getCurrentYear(),
+		IsAuthenticated: app.isAutheticated(r),
+	}
 }

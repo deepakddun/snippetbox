@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 
 	"github.com/deepakddun/snippetbox/internal/models"
@@ -40,12 +41,9 @@ func (app *application) home(w http.ResponseWriter, r *http.Request) {
 		app.serverError(w, r, err)
 		return
 	}
-
-	data := templateData{
-		Snippets:    snippets,
-		CurrentYear: app.getCurrentYear(),
-	}
-
+	//flash := app.sessionManager.PopString(r.Context(), "flash")
+	data := app.newTemplateData(r)
+	data.Snippets = snippets
 	app.render(w, r, "home.tmpl", http.StatusOK, data)
 	// err = ts.ExecuteTemplate(w, "base", data)
 	// if err != nil {
@@ -134,6 +132,7 @@ func (app *application) snippetCreate(w http.ResponseWriter, r *http.Request) {
 	data.Form = snippetCreateForm{
 		Expires: 7,
 	}
+	data.IsAuthenticated = app.isAutheticated(r)
 	app.render(w, r, "create.tmpl", http.StatusOK, data)
 
 }
@@ -283,9 +282,80 @@ func (app *application) userLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *application) userLoginPost(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "Authenticate and login the user...")
+	// fmt.Fprintln(w, "Authenticate and login the user...")
+
+	var form UserLoginForm
+
+	err := r.ParseForm()
+
+	if err != nil {
+		app.ClientError(w, r, http.StatusBadRequest)
+		return
+	}
+
+	err = app.formDecoder.Decode(&form, r.PostForm)
+
+	if err != nil {
+		app.ClientError(w, r, http.StatusBadRequest)
+		return
+	}
+
+	form.CheckField(validator.NotBlank(form.Email), "email", "This field cannot be blank")
+	form.CheckField(validator.NotBlank(form.Password), "password", "This field cannot be blank")
+	form.CheckField(validator.EmailCheck(form.Email, validator.EmailRX), "email", "This field must be valid email address")
+
+	if !form.Valid() {
+		data := templateData{}
+		data.CurrentYear = app.getCurrentYear()
+		data.Form = form
+		app.render(w, r, "login.tmpl", http.StatusUnprocessableEntity, data)
+		return
+	}
+	fmt.Printf("email=%q type=%T\n", form.Email, form.Email)
+	fmt.Printf("password=%q type=%T\n", form.Password, form.Password)
+	id, err := app.users.Authenticate(r.Context(), form.Email, form.Password)
+
+	if err != nil {
+
+		if errors.Is(err, models.ErrInvalidCredentials) {
+			form.AddNonFieldError("Email or password is incorrect")
+
+			data := templateData{}
+			data.CurrentYear = app.getCurrentYear()
+			data.Form = form
+			data.IsAuthenticated = app.isAutheticated(r)
+			app.render(w, r, "login.tmpl", http.StatusUnprocessableEntity, data)
+
+		} else {
+			app.serverError(w, r, err)
+		}
+
+	}
+
+	err = app.sessionManager.RenewToken(r.Context())
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+
+	app.sessionManager.Put(r.Context(), "authenticatedUserID", id)
+	http.Redirect(w, r, "/snippet/create", http.StatusSeeOther)
 }
 
 func (app *application) userLogoutPost(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintln(w, "Logout the user...")
+	//fmt.Fprintln(w, "Logout the user...")
+
+	err := app.sessionManager.RenewToken(r.Context())
+
+	if err != nil {
+		debug.PrintStack()
+		app.serverError(w, r, err)
+		return
+	}
+
+	app.sessionManager.Remove(r.Context(), "authenticatedUserID")
+
+	app.sessionManager.Put(r.Context(), "flash", "You've have been logged out successfully")
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

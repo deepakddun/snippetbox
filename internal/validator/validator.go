@@ -61,7 +61,3 @@ func EmailCheck(value string, rx *regexp.Regexp) bool {
 	fmt.Println(matches)
 	return matches
 }
-
-func Matches(email string) {
-
-}
